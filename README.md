@@ -1,0 +1,149 @@
+# okabe
+
+サーバーに常駐する個人用AIエージェント。自作クライアントから話しかけると応答し、
+エージェント側からも定期ジョブを起点に**能動的に通知してくる**。
+
+- シングルユーザー専用・セルフホスト前提（安価なVPS 1台で完結）
+- 最初のユースケースはスケジュール支援（Googleカレンダー連携）。機能は「スキル」として追加していく
+- サーバー: **Bun + Hono + TypeScript + SQLite (Drizzle)** / クライアント: **Flutter**
+
+## アーキテクチャ
+
+```mermaid
+flowchart LR
+    subgraph client["Flutter app"]
+        UI[会話UI]
+    end
+
+    subgraph server["Bun server (VPS 1台)"]
+        WS[WebSocket channel]
+        HTTP[REST: catch-up / health]
+        CORE[Agent core<br/>会話ループ・通知ディスパッチ]
+        LLM[LlmProvider<br/>→ Anthropic]
+        SKILLS[Skills<br/>calendar / ...]
+        JOBS[Scheduler<br/>cron jobs]
+        DB[(SQLite<br/>events)]
+    end
+
+    UI <-->|wss 双方向| WS
+    UI -->|GET /events?after=| HTTP
+    WS --> CORE
+    CORE --> LLM
+    LLM -->|tool use| SKILLS
+    JOBS -->|notify| CORE
+    CORE -->|1. 永続化| DB
+    CORE -->|2. 配送| WS
+```
+
+### 設計の要: 配送チャネルを信頼しない
+
+エージェント発のイベント（応答・通知とも）は、**必ず先に SQLite の受信箱（`events` テーブル）へ
+永続化してから**接続中のクライアントに配送する。クライアントは再接続時・起動時に
+`GET /events?after=<最終受信ID>` で差分を取り寄せる（catch-up）。
+
+これにより WebSocket が切れていてもイベントは失われず、将来のモバイルプッシュ（FCM）は
+「新着があるよ、と端末を起こすだけの装置」として `Channel` 実装1つの追加で済む。
+詳細は [ADR-0003](docs/adr/0003-websocket-inbox-catchup.md)。
+
+### 拡張の縫い目は4つだけ
+
+| インターフェース | 役割 | 将来の差し込み |
+|---|---|---|
+| `LlmProvider` | `chat(messages, tools, { tier })` | 軽量/上位モデルの階層ルーティング、別プロバイダー |
+| `Skill` | tool定義 + 実行 + ジョブ登録 | 案件監視などの新ユースケース |
+| `Channel` | 永続化済みイベントの配送 | CLI / Web / FCM / メッセンジャー連携 |
+| `JobDef` | cron スケジュールと実行 | スキルによる定期実行・監視 |
+
+過度な抽象化はしない。各インターフェースの実装は1個から始める。
+
+## 技術選定の理由
+
+各決定は ADR（Architecture Decision Record）として残している。
+
+| 選定 | なぜ | ADR |
+|---|---|---|
+| Bun + Hono | 常駐デーモンに必要な runtime / SQLite / WS / test を1バイナリに集約し依存を最小化。Hono の Web Standards 準拠がランタイム乗り換えの保険 | [0001](docs/adr/0001-bun-runtime.md) |
+| SQLite + Drizzle | 個人エージェントの真の運用コストはDBの世話。pgvector が欲しくなった時の移行経路（sqlite-vec / dialect差し替え）を確認した上で運用ゼロの側から開始 | [0002](docs/adr/0002-sqlite-drizzle.md) |
+| WS + 受信箱 + catch-up | 双方向要件に対し接続管理を1本に集約。配信保証はDBが担う | [0003](docs/adr/0003-websocket-inbox-catchup.md) |
+| Flutter | 学習予算はサーバー側に全振り。iOS Web Push の制約から PWA を棄却 | [0004](docs/adr/0004-flutter-client.md) |
+| 自前 LlmProvider | エージェントループ（tool use ルーティング）が本体。メタフレームワークに預けない | [0005](docs/adr/0005-own-llm-abstraction.md) |
+| 静的Bearerトークン | シングルユーザーに OAuth/JWT は攻撃面と保守負担の増加でしかない | [0006](docs/adr/0006-static-bearer-token.md) |
+
+全体設計は [docs/design.md](docs/design.md)。
+
+## セットアップ
+
+### 必要なもの
+
+- [Bun](https://bun.sh/) 1.2+
+- Flutter 3.44+（[fvm](https://fvm.app/) 推奨。`app/.fvmrc` にピン留め済み）
+
+### サーバー
+
+```bash
+cd server
+bun install
+cp .env.example .env
+# .env を編集: AUTH_TOKEN に `openssl rand -base64 32` の値を設定
+bun run dev
+```
+
+`http://localhost:8787/health` が `{"ok":true}` を返せば起動している。
+
+### クライアント
+
+```bash
+cd app
+fvm flutter pub get
+fvm flutter run -d macos \
+  --dart-define=AGENT_URL=http://localhost:8787 \
+  --dart-define=AGENT_TOKEN=<AUTH_TOKEN と同じ値>
+```
+
+メッセージを送るとサーバーがエコーを返す（M1 時点）。
+
+### 本番配置（VPS）
+
+systemd + リバースプロキシ（Caddy 等で HTTPS 終端）を想定。手順は M4 までに `docs/` に追記予定。
+
+## 開発
+
+```bash
+# サーバー: lint + 型チェック + テスト
+cd server && bun run check && bunx tsc --noEmit && bun test
+
+# クライアント
+cd app && fvm flutter analyze && fvm flutter test
+
+# E2E（実サーバー × 実クライアント。手順は app/test/e2e_test.dart 冒頭を参照）
+```
+
+## ロードマップ
+
+| MS | 内容 | 状態 |
+|---|---|---|
+| M0 | 設計（スタック選定・プロトコル・ADR） | ✅ |
+| M1 | メッセージ往復の成立（WS + 認証 + 受信箱 + catch-up + エコー） | ✅ |
+| M2 | LLM会話（Anthropic、会話履歴つきストリーミング応答） | 🔜 |
+| M3 | カレンダースキル（Google OAuth2 / freebusy） | — |
+| M4 | 能動通知（定期ジョブ → 毎朝の予定サマリー） | — |
+| 以降 | FCMプッシュ / 案件監視スキル / 階層LLMルーティング | — |
+
+## リポジトリ構成
+
+```
+okabe/
+├── server/            # Bun + Hono + Drizzle（エージェント本体）
+│   ├── src/
+│   │   ├── core/      # エージェントループ、通知ディスパッチ
+│   │   ├── llm/       # LlmProvider + anthropic 実装（M2）
+│   │   ├── skills/    # Skill インターフェース + calendar/（M3）
+│   │   ├── channels/  # Channel インターフェース + websocket/
+│   │   ├── jobs/      # スケジューラ（M4）
+│   │   ├── store/     # Drizzle スキーマ + リポジトリ
+│   │   └── http/      # Hono ルーティング、認証
+│   └── drizzle/       # マイグレーション
+├── app/               # Flutter クライアント
+├── docs/              # 設計ドキュメント + ADR
+└── .github/workflows/ # CI
+```
