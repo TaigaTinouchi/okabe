@@ -8,7 +8,8 @@
     "test": "bun test",
     "check": "biome check .",
     "check:fix": "biome check --write .",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "usage": "bun scripts/usage-report.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.5.3",
