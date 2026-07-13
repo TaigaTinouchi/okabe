@@ -3,7 +3,12 @@ import { startServer } from "../src/server";
 
 const TOKEN = "test-token-0123456789abcdef";
 
-const running = startServer({ port: 0, authToken: TOKEN, dbPath: ":memory:" });
+const running = startServer({
+  port: 0,
+  authToken: TOKEN,
+  dbPath: ":memory:",
+  anthropicModel: "unused",
+});
 const base = `http://localhost:${running.port}`;
 
 afterAll(() => running.stop());

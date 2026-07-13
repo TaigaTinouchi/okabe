@@ -55,8 +55,24 @@ export function createApp(deps: AppDeps) {
         }
         // ユーザー発話もタイムラインの一部として受信箱に載せる（全クライアントに同報）
         await dispatcher.emit("user_message", message.payload);
-        for await (const reply of agent.respond(message.payload.text)) {
-          await dispatcher.emit(reply.type, reply.payload);
+        try {
+          for await (const reply of agent.respond(message.payload.text)) {
+            if (reply.kind === "delta") {
+              // 断片は永続化しない。全文は最後に assistant_message として受信箱に載る
+              wsChannel.broadcastTransient({
+                type: "assistant_delta",
+                payload: { text: reply.text },
+              });
+            } else {
+              await dispatcher.emit(reply.type, reply.payload);
+            }
+          }
+        } catch (err) {
+          console.error(`[agent] respond failed: ${String(err)}`);
+          wsChannel.broadcastTransient({
+            type: "error",
+            payload: { message: "応答の生成に失敗しました。しばらくして再送してください。" },
+          });
         }
       },
     })),

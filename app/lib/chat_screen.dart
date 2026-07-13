@@ -31,6 +31,7 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     final timeline = ref.watch(timelineProvider);
+    final pending = ref.watch(pendingAssistantProvider);
     final status = ref
             .watch(connectionStatusProvider)
             .value ??
@@ -47,9 +48,16 @@ class _ChatScreenState extends ConsumerState<ChatScreen> {
             child: ListView.builder(
               reverse: true,
               padding: const EdgeInsets.all(12),
-              itemCount: timeline.length,
-              itemBuilder: (context, index) =>
-                  _EventBubble(event: timeline[timeline.length - 1 - index]),
+              itemCount: timeline.length + (pending != null ? 1 : 0),
+              itemBuilder: (context, index) {
+                // reverse リストの先頭（画面の最下部）に生成途中のバブルを置く
+                if (pending != null && index == 0) {
+                  return _PendingBubble(text: pending);
+                }
+                final eventIndex =
+                    timeline.length - 1 - (index - (pending != null ? 1 : 0));
+                return _EventBubble(event: timeline[eventIndex]);
+              },
             ),
           ),
           SafeArea(
@@ -105,6 +113,31 @@ class _StatusIndicator extends StatelessWidget {
           const SizedBox(width: 6),
           Text(label, style: Theme.of(context).textTheme.bodySmall),
         ],
+      ),
+    );
+  }
+}
+
+/// 生成途中のアシスタント応答（assistant_delta の累積表示）
+class _PendingBubble extends StatelessWidget {
+  const _PendingBubble({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.symmetric(vertical: 4),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        constraints: const BoxConstraints(maxWidth: 480),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Text('$text▌'),
       ),
     );
   }

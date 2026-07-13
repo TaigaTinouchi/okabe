@@ -1,10 +1,9 @@
 /// 実サーバーとの E2E テスト。通常の `flutter test` ではスキップされる。
 ///
 /// 実行方法（リポジトリルートで）:
-///   1. AUTH_TOKEN=<token> bun server/src/index.ts
-///   2. cd app && fvm flutter test test/e2e_test.dart \
-///        --dart-define=E2E_AGENT_URL=http://localhost:8787 \
-///        --dart-define=E2E_AGENT_TOKEN=<token>
+///   1. `AUTH_TOKEN=(token) bun server/src/index.ts`（エコー確認なので ANTHROPIC_API_KEY なしで）
+///   2. `cd app && fvm flutter test test/e2e_test.dart`
+///      `--dart-define=E2E_AGENT_URL=http://localhost:8787 --dart-define=E2E_AGENT_TOKEN=(token)`
 library;
 
 import 'package:flutter_test/flutter_test.dart';

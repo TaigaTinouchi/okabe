@@ -19,6 +19,7 @@
     "typescript": "^5"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.111.0",
     "drizzle-orm": "^0.45.2",
     "hono": "^4.12.30",
     "zod": "^4.4.3"

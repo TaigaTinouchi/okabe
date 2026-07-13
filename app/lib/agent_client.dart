@@ -13,6 +13,11 @@ enum ConnectionStatus { connecting, connected, disconnected }
 /// エージェント接続の抽象。テストではフェイクに差し替える。
 abstract class AgentConnection {
   Stream<ServerEvent> get events;
+
+  /// アシスタント応答のストリーミング断片（非永続）。
+  /// 確定文は [events] に assistant_message として流れてくる。
+  Stream<String> get assistantDeltas;
+
   Stream<ConnectionStatus> get statusChanges;
   ConnectionStatus get status;
   void start();
@@ -30,10 +35,14 @@ class AgentClient implements AgentConnection {
   final AppConfig config;
 
   final _events = StreamController<ServerEvent>.broadcast();
+  final _deltas = StreamController<String>.broadcast();
   final _statusChanges = StreamController<ConnectionStatus>.broadcast();
 
   @override
   Stream<ServerEvent> get events => _events.stream;
+
+  @override
+  Stream<String> get assistantDeltas => _deltas.stream;
 
   @override
   Stream<ConnectionStatus> get statusChanges => _statusChanges.stream;
@@ -78,12 +87,17 @@ class AgentClient implements AgentConnection {
       _subscription = channel.stream.listen(
         (frame) {
           final event = ServerEvent.tryParse(frame);
-          if (event == null) return;
-          if (catchingUp) {
-            buffered.add(event);
-          } else {
-            _emit(event);
+          if (event != null) {
+            if (catchingUp) {
+              buffered.add(event);
+            } else {
+              _emit(event);
+            }
+            return;
           }
+          // ストリーミング断片は「今」表示する以外の価値がないので即時に流す
+          final delta = tryParseAssistantDelta(frame);
+          if (delta != null) _deltas.add(delta);
         },
         onDone: _scheduleReconnect,
         onError: (_) => _scheduleReconnect(),
@@ -157,6 +171,7 @@ class AgentClient implements AgentConnection {
     _reconnectTimer?.cancel();
     _teardownChannel();
     _events.close();
+    _deltas.close();
     _statusChanges.close();
   }
 }

@@ -1,9 +1,10 @@
 import { createBunWebSocket } from "hono/bun";
 import { WebSocketChannel } from "./channels/websocket";
 import type { Config } from "./config";
-import { type Agent, EchoAgent } from "./core/agent";
+import { type Agent, EchoAgent, LlmAgent } from "./core/agent";
 import { Dispatcher } from "./core/dispatcher";
 import { createApp } from "./http/app";
+import { AnthropicProvider } from "./llm/anthropic";
 import { createDb } from "./store/db";
 import { EventStore } from "./store/events";
 
@@ -21,7 +22,7 @@ export function startServer(config: Config, overrides: { agent?: Agent } = {}): 
   const wsChannel = new WebSocketChannel();
   dispatcher.register(wsChannel);
 
-  const agent = overrides.agent ?? new EchoAgent();
+  const agent = overrides.agent ?? createDefaultAgent(config, store);
   const { upgradeWebSocket, websocket } = createBunWebSocket();
   const app = createApp({
     authToken: config.authToken,
@@ -47,4 +48,16 @@ export function startServer(config: Config, overrides: { agent?: Agent } = {}): 
     dispatcher,
     stop: () => server.stop(true),
   };
+}
+
+function createDefaultAgent(config: Config, store: EventStore): Agent {
+  if (!config.anthropicApiKey) {
+    console.warn("[okabe] ANTHROPIC_API_KEY 未設定のためエコー応答で起動します");
+    return new EchoAgent();
+  }
+  console.log(`[okabe] LLM: ${config.anthropicModel}`);
+  return new LlmAgent(
+    new AnthropicProvider({ apiKey: config.anthropicApiKey, model: config.anthropicModel }),
+    store,
+  );
 }

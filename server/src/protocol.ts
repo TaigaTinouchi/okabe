@@ -42,6 +42,20 @@ export const transientErrorSchema = z.object({
 
 export type TransientError = z.infer<typeof transientErrorSchema>;
 
+/**
+ * アシスタント応答のストリーミング断片。永続化せず、接続中のクライアントにのみ流す。
+ * 全文は最後に assistant_message イベントとして受信箱に載るため、
+ * 取りこぼしても catch-up で完全な形が手に入る（ADR-0003 の原則そのまま）
+ */
+export const transientDeltaSchema = z.object({
+  type: z.literal("assistant_delta"),
+  payload: z.object({
+    text: z.string(),
+  }),
+});
+
+export type TransientDelta = z.infer<typeof transientDeltaSchema>;
+
 export function parseClientMessage(raw: string): ClientMessage | null {
   let json: unknown;
   try {

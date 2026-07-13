@@ -84,11 +84,14 @@ flowchart LR
 cd server
 bun install
 cp .env.example .env
-# .env を編集: AUTH_TOKEN に `openssl rand -base64 32` の値を設定
+# .env を編集:
+#   AUTH_TOKEN         に `openssl rand -base64 32` の値を設定
+#   ANTHROPIC_API_KEY  を設定（未設定でも起動するが、応答はエコーになる）
 bun run dev
 ```
 
 `http://localhost:8787/health` が `{"ok":true}` を返せば起動している。
+モデルは `ANTHROPIC_MODEL` で変更可能（省略時 `claude-opus-4-8`）。
 
 ### クライアント
 
@@ -100,7 +103,9 @@ fvm flutter run -d macos \
   --dart-define=AGENT_TOKEN=<AUTH_TOKEN と同じ値>
 ```
 
-メッセージを送るとサーバーがエコーを返す（M1 時点）。
+メッセージを送ると、会話履歴を踏まえた応答がストリーミングで表示される。
+応答の断片（`assistant_delta`）は永続化されない一時フレームで、確定文だけが受信箱に載る —
+切断中に取りこぼしても catch-up で完全な形が届く、という M1 の原則をそのまま保っている。
 
 ### 本番配置（VPS）
 
@@ -124,8 +129,8 @@ cd app && fvm flutter analyze && fvm flutter test
 |---|---|---|
 | M0 | 設計（スタック選定・プロトコル・ADR） | ✅ |
 | M1 | メッセージ往復の成立（WS + 認証 + 受信箱 + catch-up + エコー） | ✅ |
-| M2 | LLM会話（Anthropic、会話履歴つきストリーミング応答） | 🔜 |
-| M3 | カレンダースキル（Google OAuth2 / freebusy） | — |
+| M2 | LLM会話（Anthropic、会話履歴つきストリーミング応答） | ✅ |
+| M3 | カレンダースキル（Google OAuth2 / freebusy） | 🔜 |
 | M4 | 能動通知（定期ジョブ → 毎朝の予定サマリー） | — |
 | 以降 | FCMプッシュ / 案件監視スキル / 階層LLMルーティング | — |
 

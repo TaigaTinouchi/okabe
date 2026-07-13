@@ -52,3 +52,20 @@ String encodeUserMessage(String text) => jsonEncode({
       'type': 'user_message',
       'payload': {'text': text},
     });
+
+/// assistant_delta（ストリーミング断片・非永続）の断片テキストを返す。違えば null。
+String? tryParseAssistantDelta(Object? raw) {
+  if (raw is! String) return null;
+  final Object? json;
+  try {
+    json = jsonDecode(raw);
+  } on FormatException {
+    return null;
+  }
+  if (json is! Map<String, dynamic>) return null;
+  if (json['type'] != 'assistant_delta') return null;
+  final payload = json['payload'];
+  if (payload is! Map<String, dynamic>) return null;
+  final text = payload['text'];
+  return text is String ? text : null;
+}

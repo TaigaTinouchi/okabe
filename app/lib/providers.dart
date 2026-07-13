@@ -31,3 +31,24 @@ class TimelineNotifier extends Notifier<List<ServerEvent>> {
     return [];
   }
 }
+
+/// 生成途中のアシスタント応答（assistant_delta の累積）。
+/// 確定イベント（assistant_message）が届いたら消える。
+final pendingAssistantProvider = NotifierProvider<PendingAssistantNotifier, String?>(
+  PendingAssistantNotifier.new,
+);
+
+class PendingAssistantNotifier extends Notifier<String?> {
+  @override
+  String? build() {
+    final connection = ref.watch(agentConnectionProvider);
+    final deltaSub =
+        connection.assistantDeltas.listen((text) => state = (state ?? '') + text);
+    final eventSub = connection.events.listen((event) {
+      if (!event.isUser) state = null;
+    });
+    ref.onDispose(deltaSub.cancel);
+    ref.onDispose(eventSub.cancel);
+    return null;
+  }
+}

@@ -1,5 +1,5 @@
 import type { WSContext } from "hono/ws";
-import type { ServerEvent } from "../protocol";
+import type { ServerEvent, TransientDelta, TransientError } from "../protocol";
 import type { Channel } from "./channel";
 
 /** 接続中の WebSocket 全てにイベントを配送するチャネル */
@@ -20,13 +20,22 @@ export class WebSocketChannel implements Channel {
   }
 
   deliver(event: ServerEvent): void {
-    const frame = JSON.stringify(event);
+    this.broadcast(event);
+  }
+
+  /** 永続化しない一時フレーム（delta / error）の同報。失われても catch-up で全文が届く */
+  broadcastTransient(frame: TransientDelta | TransientError): void {
+    this.broadcast(frame);
+  }
+
+  private broadcast(payload: object): void {
+    const frame = JSON.stringify(payload);
     for (const ws of this.sockets) {
       try {
         ws.send(frame);
       } catch (err) {
-        // 切断競合等。イベントは永続化済みなので catch-up で回収される
-        console.warn(`[ws] deliver failed: ${String(err)}`);
+        // 切断競合等。永続イベントは catch-up で回収される
+        console.warn(`[ws] send failed: ${String(err)}`);
       }
     }
   }
