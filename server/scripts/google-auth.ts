@@ -4,7 +4,8 @@
  *
  *   cd server && bun scripts/google-auth.ts
  *
- * ブラウザで認可すると refresh token が表示されるので .env に書き写す。
+ * ブラウザで認可すると refresh token を .env に直接書き込む
+ * （トークンをターミナルやログに出さないため）。
  */
 
 const clientId = Bun.env.GOOGLE_CLIENT_ID;
@@ -58,8 +59,17 @@ const server = Bun.serve({
       return new Response("失敗しました。ターミナルを確認してください。", { status: 500 });
     }
 
-    console.log("\n✅ 認可成功。以下を server/.env に追記してください:\n");
-    console.log(`GOOGLE_REFRESH_TOKEN=${body.refresh_token}\n`);
+    // .env の GOOGLE_REFRESH_TOKEN を直接更新（既存行があれば置換、なければ追記）
+    const envPath = ".env";
+    const env = await Bun.file(envPath).text();
+    const line = `GOOGLE_REFRESH_TOKEN=${body.refresh_token}`;
+    const updated = /^GOOGLE_REFRESH_TOKEN=.*$/m.test(env)
+      ? env.replace(/^GOOGLE_REFRESH_TOKEN=.*$/m, line)
+      : `${env.trimEnd()}\n${line}\n`;
+    await Bun.write(envPath, updated);
+
+    console.log("\n✅ 認可成功。GOOGLE_REFRESH_TOKEN を .env に書き込みました。");
+    console.log("サーバーを再起動すると calendar スキルが有効になります。\n");
     setTimeout(() => {
       server.stop();
       process.exit(0);
