@@ -24,5 +24,8 @@ build/
 *.iml
 .idea/
 
+# ローカル環境（個人のgcloud構成切り替え等）
+.envrc
+
 # OS
 .DS_Store
