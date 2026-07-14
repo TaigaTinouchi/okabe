@@ -8,6 +8,9 @@ const running = startServer({
   authToken: TOKEN,
   dbPath: ":memory:",
   anthropicModel: "unused",
+  anthropicModelLight: "unused",
+  disabledJobs: "",
+  morningSummaryCron: "30 7 * * *",
   googleCalendarId: "primary",
 });
 const base = `http://localhost:${running.port}`;

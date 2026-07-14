@@ -7,6 +7,12 @@ const configSchema = z.object({
   /** 未設定なら LLM を使わずエコー応答（M1 相当）で起動する */
   anthropicApiKey: z.string().optional(),
   anthropicModel: z.string().default("claude-opus-4-8"),
+  /** 軽タスク用モデル（tier: light、サマリー整形など） */
+  anthropicModelLight: z.string().default("claude-haiku-4-5"),
+  /** 無効化するジョブ名（カンマ区切り） */
+  disabledJobs: z.string().default(""),
+  /** 毎朝サマリーの実行時刻（cron式、Asia/Tokyo） */
+  morningSummaryCron: z.string().default("30 7 * * *"),
   /** 3つ揃って初めて calendar スキルが有効になる（取得手順は README） */
   googleClientId: z.string().optional(),
   googleClientSecret: z.string().optional(),
@@ -23,6 +29,9 @@ export function loadConfig(env: Record<string, string | undefined> = Bun.env): C
     dbPath: env.DB_PATH,
     anthropicApiKey: env.ANTHROPIC_API_KEY,
     anthropicModel: env.ANTHROPIC_MODEL,
+    anthropicModelLight: env.ANTHROPIC_MODEL_LIGHT,
+    disabledJobs: env.DISABLED_JOBS,
+    morningSummaryCron: env.MORNING_SUMMARY_CRON,
     googleClientId: env.GOOGLE_CLIENT_ID,
     googleClientSecret: env.GOOGLE_CLIENT_SECRET,
     googleRefreshToken: env.GOOGLE_REFRESH_TOKEN,

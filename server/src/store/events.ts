@@ -1,4 +1,4 @@
-import { asc, desc, gt, inArray } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray } from "drizzle-orm";
 import type { EventType, ServerEvent } from "../protocol";
 import type { Db } from "./db";
 import { events } from "./schema";
@@ -13,19 +13,32 @@ export class EventStore {
   }
 
   /**
-   * 会話履歴として意味を持つイベント（ユーザー発話・アシスタント応答）の直近 limit 件を
-   * 時系列順で返す。M2: LLM に渡す文脈はこの受信箱がそのまま真実（別テーブルを持たない）
+   * 会話履歴として意味を持つイベントの直近 limit 件を時系列順で返す。
+   * LLM に渡す文脈はこの受信箱がそのまま真実（別テーブルを持たない）。
+   * 通知も含める: 「（朝の通知を受けて）2件目の詳細教えて」が文脈として通じるように（M4-c）
    */
   listRecentConversation(limit = 30): ServerEvent[] {
     return this.db
       .select()
       .from(events)
-      .where(inArray(events.type, ["user_message", "assistant_message"]))
+      .where(inArray(events.type, ["user_message", "assistant_message", "notification"]))
       .orderBy(desc(events.id))
       .limit(limit)
       .all()
       .map(toServerEvent)
       .reverse();
+  }
+
+  /** 未読通知（既読カーソルより後の notification）を昇順で返す（M4-b） */
+  listNotificationsAfter(after: number, limit = 100): ServerEvent[] {
+    return this.db
+      .select()
+      .from(events)
+      .where(and(eq(events.type, "notification"), gt(events.id, after)))
+      .orderBy(asc(events.id))
+      .limit(limit)
+      .all()
+      .map(toServerEvent);
   }
 
   /** id が after より大きいイベントを昇順で返す */

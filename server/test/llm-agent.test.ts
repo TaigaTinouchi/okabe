@@ -33,11 +33,12 @@ async function collect(agent: LlmAgent) {
 }
 
 describe("LlmAgent", () => {
-  test("受信箱の会話履歴をそのまま文脈として渡す", async () => {
+  test("受信箱の会話履歴（通知含む）をそのまま文脈として渡す", async () => {
     const store = new EventStore(createDb(":memory:"));
     store.append("user_message", { text: "私の名前はたいがです" });
     store.append("assistant_message", { text: "はじめまして、たいがさん" });
-    store.append("notification", { text: "（通知は履歴に含めない）" });
+    // 通知もエージェント発の発話として文脈に載る（M4-c: 「2件目の詳細教えて」が通じる）
+    store.append("notification", { text: "今日の予定は2件です" });
     store.append("user_message", { text: "私の名前は？" });
 
     const provider = new FakeProvider(["たいが", "さんです"]);
@@ -47,6 +48,7 @@ describe("LlmAgent", () => {
     expect(call?.messages).toEqual([
       { role: "user", content: "私の名前はたいがです" },
       { role: "assistant", content: "はじめまして、たいがさん" },
+      { role: "assistant", content: "今日の予定は2件です" },
       { role: "user", content: "私の名前は？" },
     ]);
     expect(call?.opts?.system).toContain("okabe");
@@ -62,15 +64,22 @@ describe("LlmAgent", () => {
     ]);
   });
 
-  test("履歴の先頭が assistant の場合は user から始まるよう切り詰める", async () => {
+  test("履歴の先頭が assistant（通知等）の場合は捨てずに合成 user ターンを前置する", async () => {
     const store = new EventStore(createDb(":memory:"));
-    store.append("assistant_message", { text: "（履歴の切れ目）" });
-    store.append("user_message", { text: "こんにちは" });
+    store.append("notification", { text: "今日の予定は1件です: 13:30 休憩" });
+    store.append("user_message", { text: "その予定の詳細教えて" });
 
-    const provider = new FakeProvider(["やあ"]);
+    const provider = new FakeProvider(["はい"]);
     await collect(new LlmAgent(provider, store));
 
-    expect(provider.calls[0]?.messages[0]).toEqual({ role: "user", content: "こんにちは" });
+    const messages = provider.calls[0]?.messages;
+    // 先頭は user（API制約を満たす）だが、通知は文脈に残っている
+    expect(messages?.[0]?.role).toBe("user");
+    expect(messages?.[1]).toEqual({
+      role: "assistant",
+      content: "今日の予定は1件です: 13:30 休憩",
+    });
+    expect(messages?.[2]).toEqual({ role: "user", content: "その予定の詳細教えて" });
   });
 
   test("historyLimit で渡す文脈の量を絞る", async () => {

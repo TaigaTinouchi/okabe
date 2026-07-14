@@ -4,16 +4,21 @@ import type { Config } from "./config";
 import { type Agent, EchoAgent, LlmAgent } from "./core/agent";
 import { Dispatcher } from "./core/dispatcher";
 import { createApp } from "./http/app";
+import { type JobContext, JobScheduler } from "./jobs/scheduler";
 import { AnthropicProvider } from "./llm/anthropic";
+import type { LlmProvider } from "./llm/provider";
 import { CalendarSkill } from "./skills/calendar";
 import { GoogleCalendarClient } from "./skills/calendar/google-client";
 import { type Skill, SkillRegistry } from "./skills/skill";
 import { createDb } from "./store/db";
 import { EventStore } from "./store/events";
+import { JobRunStore } from "./store/job-runs";
+import { ReadStateStore } from "./store/read-state";
 
 export interface RunningServer {
   port: number;
   dispatcher: Dispatcher;
+  scheduler: JobScheduler;
   stop(): void;
 }
 
@@ -21,15 +26,43 @@ export interface RunningServer {
 export function startServer(config: Config, overrides: { agent?: Agent } = {}): RunningServer {
   const db = createDb(config.dbPath);
   const store = new EventStore(db);
+  const readState = new ReadStateStore(db);
   const dispatcher = new Dispatcher(store);
   const wsChannel = new WebSocketChannel();
   dispatcher.register(wsChannel);
 
-  const agent = overrides.agent ?? createDefaultAgent(config, store);
+  const provider = config.anthropicApiKey
+    ? new AnthropicProvider({
+        apiKey: config.anthropicApiKey,
+        model: config.anthropicModel,
+        lightModel: config.anthropicModelLight,
+      })
+    : undefined;
+  const skills = createSkills(config);
+  const registry = new SkillRegistry(skills);
+
+  const agent = overrides.agent ?? createDefaultAgent(config, store, provider, registry);
+
+  // ジョブスケジューラ（M4-a）。スキルが持つ定期ジョブを起動時に再登録する
+  const scheduler = new JobScheduler({
+    runStore: new JobRunStore(db),
+    disabledJobs: new Set(
+      config.disabledJobs
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean),
+    ),
+    ctx: createJobContext(dispatcher, provider),
+  });
+  for (const skill of skills) {
+    for (const job of skill.jobs ?? []) scheduler.register(job);
+  }
+
   const { upgradeWebSocket, websocket } = createBunWebSocket();
   const app = createApp({
     authToken: config.authToken,
     store,
+    readState,
     dispatcher,
     agent,
     wsChannel,
@@ -49,24 +82,47 @@ export function startServer(config: Config, overrides: { agent?: Agent } = {}): 
   return {
     port,
     dispatcher,
-    stop: () => server.stop(true),
+    scheduler,
+    stop: () => {
+      scheduler.stop();
+      server.stop(true);
+    },
   };
 }
 
-function createDefaultAgent(config: Config, store: EventStore): Agent {
-  if (!config.anthropicApiKey) {
+/** ジョブに渡す実行コンテキスト。通知の発行と、軽量モデルでのテキスト生成 */
+function createJobContext(dispatcher: Dispatcher, provider: LlmProvider | undefined): JobContext {
+  return {
+    notify: async (text) => {
+      await dispatcher.emit("notification", { text });
+    },
+    complete: async (prompt) => {
+      if (!provider) throw new Error("ANTHROPIC_API_KEY 未設定のため complete は使えません");
+      let text = "";
+      for await (const ev of provider.chat([{ role: "user", content: prompt }], {
+        tier: "light",
+      })) {
+        if (ev.type === "message_end") text = ev.text;
+      }
+      return text;
+    },
+  };
+}
+
+function createDefaultAgent(
+  config: Config,
+  store: EventStore,
+  provider: LlmProvider | undefined,
+  registry: SkillRegistry,
+): Agent {
+  if (!provider) {
     console.warn("[okabe] ANTHROPIC_API_KEY 未設定のためエコー応答で起動します");
     return new EchoAgent();
   }
-  const skills = new SkillRegistry(createSkills(config));
   console.log(
-    `[okabe] LLM: ${config.anthropicModel} / skills: ${skills.isEmpty ? "なし" : skills.tools.map((t) => t.name).join(", ")}`,
+    `[okabe] LLM: ${config.anthropicModel} (light: ${config.anthropicModelLight}) / skills: ${registry.isEmpty ? "なし" : registry.tools.map((t) => t.name).join(", ")}`,
   );
-  return new LlmAgent(
-    new AnthropicProvider({ apiKey: config.anthropicApiKey, model: config.anthropicModel }),
-    store,
-    skills,
-  );
+  return new LlmAgent(provider, store, registry);
 }
 
 function createSkills(config: Config): Skill[] {
@@ -80,6 +136,7 @@ function createSkills(config: Config): Skill[] {
           refreshToken: config.googleRefreshToken,
           calendarId: config.googleCalendarId,
         }),
+        { morningSummaryCron: config.morningSummaryCron },
       ),
     );
   } else {

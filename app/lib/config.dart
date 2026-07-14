@@ -30,5 +30,7 @@ class AppConfig {
   Uri eventsUri({required int after}) =>
       baseUri.replace(path: '/events', queryParameters: {'after': '$after'});
 
+  Uri get readCursorUri => baseUri.replace(path: '/read-cursor');
+
   Map<String, String> get authHeaders => {'authorization': 'Bearer $token'};
 }

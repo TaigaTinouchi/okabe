@@ -12,10 +12,13 @@ import type {
 export interface AnthropicProviderOptions {
   apiKey: string;
   model?: string;
+  /** tier: "light" 指定時に使う軽量モデル（サマリー整形などの軽タスク用） */
+  lightModel?: string;
   maxTokens?: number;
 }
 
 const DEFAULT_MODEL = "claude-opus-4-8";
+const DEFAULT_LIGHT_MODEL = "claude-haiku-4-5";
 const DEFAULT_MAX_TOKENS = 8_192;
 
 function toSdkBlock(block: ChatContent): Anthropic.ContentBlockParam {
@@ -76,6 +79,11 @@ export function buildRequestParams(args: {
   system?: string;
   messages: ChatMessage[];
   tools?: ToolDef[];
+  /**
+   * adaptive thinking を有効にするか。軽量モデル（Haiku 4.5 等）は
+   * adaptive 未対応のため false にする（省略時はthinkingなしで動く）
+   */
+  adaptiveThinking?: boolean;
 }): Anthropic.MessageStreamParams {
   const cacheControl = { type: "ephemeral" as const };
 
@@ -101,7 +109,7 @@ export function buildRequestParams(args: {
   return {
     model: args.model,
     max_tokens: args.maxTokens,
-    thinking: { type: "adaptive" },
+    ...(args.adaptiveThinking !== false ? { thinking: { type: "adaptive" as const } } : {}),
     system: args.system
       ? [{ type: "text", text: args.system, cache_control: cacheControl }]
       : undefined,
@@ -133,23 +141,29 @@ export function logUsage(model: string, usage: Anthropic.Usage): void {
 export class AnthropicProvider implements LlmProvider {
   private readonly client: Anthropic;
   private readonly model: string;
+  private readonly lightModel: string;
   private readonly maxTokens: number;
 
   constructor(opts: AnthropicProviderOptions) {
     this.client = new Anthropic({ apiKey: opts.apiKey });
     this.model = opts.model ?? DEFAULT_MODEL;
+    this.lightModel = opts.lightModel ?? DEFAULT_LIGHT_MODEL;
     this.maxTokens = opts.maxTokens ?? DEFAULT_MAX_TOKENS;
   }
 
   async *chat(messages: ChatMessage[], opts?: ChatOptions): AsyncIterable<LlmStreamEvent> {
-    // opts.tier は将来の階層ルーティング用。現状は単一モデル
+    // 階層ルーティング（M4で初適用）: 軽タスクは light モデルに振る。
+    // Haiku 4.5 は adaptive thinking 未対応のため light では thinking を外す
+    const light = opts?.tier === "light";
+    const model = light ? this.lightModel : this.model;
     const stream = this.client.messages.stream(
       buildRequestParams({
-        model: this.model,
+        model,
         maxTokens: this.maxTokens,
         system: opts?.system,
         messages,
         tools: opts?.tools,
+        adaptiveThinking: !light,
       }),
     );
 
@@ -161,7 +175,7 @@ export class AnthropicProvider implements LlmProvider {
       }
     }
     const final = await stream.finalMessage();
-    logUsage(this.model, final.usage);
+    logUsage(model, final.usage);
     yield {
       type: "message_end",
       text: full,

@@ -1,7 +1,8 @@
 import { z } from "zod";
+import type { JobDef } from "../../jobs/scheduler";
 import type { ToolDef } from "../../llm/provider";
 import type { Skill } from "../skill";
-import { computeFreeSlots, jstToMs } from "./freebusy";
+import { computeFreeSlots, jstDate, jstToMs } from "./freebusy";
 import type { GoogleCalendarClient } from "./google-client";
 
 const dateSchema = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD 形式で指定");
@@ -64,7 +65,37 @@ export class CalendarSkill implements Skill {
     },
   ];
 
-  constructor(private readonly client: GoogleCalendarClient) {}
+  constructor(
+    private readonly client: GoogleCalendarClient,
+    private readonly opts: { morningSummaryCron?: string } = {},
+  ) {}
+
+  /**
+   * 毎朝の予定サマリー（M4-c）。当日の予定を取得し、軽量モデルで自然文に整形して通知する。
+   * 予定ゼロの日も一言送る（ジョブが生きていることの確認を兼ねる）
+   */
+  get jobs(): JobDef[] {
+    return [
+      {
+        name: "morning-summary",
+        schedule: this.opts.morningSummaryCron ?? "30 7 * * *",
+        run: async (ctx) => {
+          const today = jstDate(Date.now());
+          const { timeMin, timeMax } = toIsoRange(today, today);
+          const events = await this.client.listEvents(timeMin, timeMax);
+          if (events.length === 0) {
+            await ctx.notify(`おはようございます。今日（${today}）の予定はありません。`);
+            return;
+          }
+          const summary = await ctx.complete(
+            `以下は今日（${today}）の予定一覧（JSON）です。朝の挨拶に続けて、予定を時刻順に簡潔にまとめた通知文を日本語で作ってください。` +
+              `件数と各予定の開始時刻（HH:MM）を明記。終日予定は「終日」と書く。前置きや説明は不要で、通知文だけを出力してください。\n${JSON.stringify(events)}`,
+          );
+          await ctx.notify(summary);
+        },
+      },
+    ];
+  }
 
   async execute(toolName: string, input: unknown): Promise<string> {
     switch (toolName) {

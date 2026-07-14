@@ -1,3 +1,4 @@
+import type { JobDef } from "../jobs/scheduler";
 import type { ToolDef } from "../llm/provider";
 
 /**
@@ -5,13 +6,14 @@ import type { ToolDef } from "../llm/provider";
  * 各スキルは独立モジュールとして tool 定義と実行を提供する。
  * ルーティングは LLM の tool use によるインテント判定で行い、
  * どのツールにも該当しなければ通常の会話応答にフォールバックする（＝何もしなくてよい）。
- * jobs（定期実行の登録）は M4 でここに追加する。
  */
 export interface Skill {
   name: string;
   tools: ToolDef[];
   /** ツールを実行し、tool_result として LLM に返す文字列（通常は JSON）を返す */
   execute(toolName: string, input: unknown): Promise<string>;
+  /** スキルが持つ定期ジョブ（M4）。起動時にスケジューラへ登録される */
+  jobs?: JobDef[];
 }
 
 /** 全スキルのツールを集約し、tool 名から担当スキルへルーティングする */

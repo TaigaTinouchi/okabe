@@ -55,13 +55,17 @@ export class LlmAgent implements Agent {
 
   async *respond(_userText: string): AsyncIterable<AgentEvent> {
     const history = this.store.listRecentConversation(this.historyLimit);
+    // 通知はエージェント発なので assistant として文脈に載せる
     const messages: ChatMessage[] = history.map((e) => ({
       role: e.type === "user_message" ? ("user" as const) : ("assistant" as const),
       content: e.payload.text,
     }));
-    // 先頭は user でなければならない（履歴の切れ目で assistant が先頭に来た場合を除去）
-    while (messages.length > 0 && messages[0]?.role !== "user") {
-      messages.shift();
+    // API制約: 先頭メッセージは user でなければならない。
+    // 先頭が assistant（通知など）の場合、切り捨てると直前の通知への
+    // フォローアップ（「その1件目の詳細は？」）が通じなくなるため、
+    // 捨てずに合成の user ターンを前置する
+    if (messages.length > 0 && messages[0]?.role !== "user") {
+      messages.unshift({ role: "user", content: "（会話履歴の続きから応答してください）" });
     }
 
     const opts = {

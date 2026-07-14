@@ -53,6 +53,7 @@ class AgentClient implements AgentConnection {
   IOWebSocketChannel? _channel;
   StreamSubscription<dynamic>? _subscription;
   Timer? _reconnectTimer;
+  Timer? _readCursorTimer;
   int _lastEventId = 0;
   int _retryCount = 0;
   bool _disposed = false;
@@ -136,6 +137,25 @@ class AgentClient implements AgentConnection {
     if (event.id <= _lastEventId) return; // catch-up と WS の重複を排除
     _lastEventId = event.id;
     _events.add(event);
+    _scheduleReadCursor();
+  }
+
+  /// 表示済みイベントの既読カーソルをサーバーへ申告する（M4-b）。
+  /// 連続受信をまとめるため少し待ってから送る。失敗しても実害なし（best effort）
+  void _scheduleReadCursor() {
+    _readCursorTimer?.cancel();
+    _readCursorTimer = Timer(const Duration(milliseconds: 800), () {
+      if (_disposed || _lastEventId == 0) return;
+      unawaited(
+        http
+            .post(
+              config.readCursorUri,
+              headers: {...config.authHeaders, 'content-type': 'application/json'},
+              body: jsonEncode({'lastEventId': _lastEventId}),
+            )
+            .then((_) {}, onError: (_) {}),
+      );
+    });
   }
 
   void _scheduleReconnect() {
@@ -169,6 +189,7 @@ class AgentClient implements AgentConnection {
   void dispose() {
     _disposed = true;
     _reconnectTimer?.cancel();
+    _readCursorTimer?.cancel();
     _teardownChannel();
     _events.close();
     _deltas.close();
