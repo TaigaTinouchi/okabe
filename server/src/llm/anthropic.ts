@@ -1,5 +1,13 @@
 import Anthropic from "@anthropic-ai/sdk";
-import type { ChatMessage, ChatOptions, LlmProvider, LlmStreamEvent } from "./provider";
+import type {
+  ChatContent,
+  ChatMessage,
+  ChatOptions,
+  LlmProvider,
+  LlmStreamEvent,
+  StopReason,
+  ToolDef,
+} from "./provider";
 
 export interface AnthropicProviderOptions {
   apiKey: string;
@@ -9,6 +17,46 @@ export interface AnthropicProviderOptions {
 
 const DEFAULT_MODEL = "claude-opus-4-8";
 const DEFAULT_MAX_TOKENS = 8_192;
+
+function toSdkBlock(block: ChatContent): Anthropic.ContentBlockParam {
+  switch (block.type) {
+    case "text":
+      return { type: "text", text: block.text };
+    case "tool_use":
+      return {
+        type: "tool_use",
+        id: block.id,
+        name: block.name,
+        input: block.input,
+      };
+    case "tool_result":
+      return {
+        type: "tool_result",
+        tool_use_id: block.toolUseId,
+        content: block.content,
+        is_error: block.isError,
+      };
+    case "provider_raw":
+      // thinking 等。受信時のブロックをそのまま返送する（改変すると 400）
+      return block.raw as Anthropic.ContentBlockParam;
+  }
+}
+
+function fromSdkBlock(block: Anthropic.ContentBlock): ChatContent {
+  switch (block.type) {
+    case "text":
+      return { type: "text", text: block.text };
+    case "tool_use":
+      return { type: "tool_use", id: block.id, name: block.name, input: block.input };
+    default:
+      return { type: "provider_raw", raw: block };
+  }
+}
+
+function mapStopReason(reason: string | null): StopReason {
+  if (reason === "end_turn" || reason === "tool_use" || reason === "max_tokens") return reason;
+  return "other";
+}
 
 /**
  * リクエスト構築（純関数・テスト対象）。
@@ -27,16 +75,27 @@ export function buildRequestParams(args: {
   maxTokens: number;
   system?: string;
   messages: ChatMessage[];
+  tools?: ToolDef[];
 }): Anthropic.MessageStreamParams {
   const cacheControl = { type: "ephemeral" as const };
 
   const messages: Anthropic.MessageParam[] = args.messages.map((m, i) => {
     const isLast = i === args.messages.length - 1;
-    if (!isLast) return { role: m.role, content: m.content };
-    return {
-      role: m.role,
-      content: [{ type: "text", text: m.content, cache_control: cacheControl }],
-    };
+    const blocks: Anthropic.ContentBlockParam[] =
+      typeof m.content === "string"
+        ? [{ type: "text", text: m.content }]
+        : m.content.map(toSdkBlock);
+    if (!isLast) {
+      // 文字列のままにしておくと prefix のバイト列が安定する（ブロック化は必要な時だけ）
+      return typeof m.content === "string"
+        ? { role: m.role, content: m.content }
+        : { role: m.role, content: blocks };
+    }
+    const last = blocks.at(-1);
+    if (last && last.type !== "thinking" && last.type !== "redacted_thinking") {
+      (last as { cache_control?: unknown }).cache_control = cacheControl;
+    }
+    return { role: m.role, content: blocks };
   });
 
   return {
@@ -46,6 +105,11 @@ export function buildRequestParams(args: {
     system: args.system
       ? [{ type: "text", text: args.system, cache_control: cacheControl }]
       : undefined,
+    tools: args.tools?.map((t) => ({
+      name: t.name,
+      description: t.description,
+      input_schema: t.inputSchema as Anthropic.Tool.InputSchema,
+    })),
     messages,
   };
 }
@@ -85,6 +149,7 @@ export class AnthropicProvider implements LlmProvider {
         maxTokens: this.maxTokens,
         system: opts?.system,
         messages,
+        tools: opts?.tools,
       }),
     );
 
@@ -97,6 +162,11 @@ export class AnthropicProvider implements LlmProvider {
     }
     const final = await stream.finalMessage();
     logUsage(this.model, final.usage);
-    yield { type: "message_end", text: full };
+    yield {
+      type: "message_end",
+      text: full,
+      stopReason: mapStopReason(final.stop_reason),
+      assistantContent: final.content.map(fromSdkBlock),
+    };
   }
 }

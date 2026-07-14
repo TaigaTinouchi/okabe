@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { LlmAgent } from "../src/core/agent";
 import type { ChatMessage, ChatOptions, LlmProvider, LlmStreamEvent } from "../src/llm/provider";
+import { SkillRegistry } from "../src/skills/skill";
 import { createDb } from "../src/store/db";
 import { EventStore } from "../src/store/events";
 
@@ -16,7 +17,12 @@ class FakeProvider implements LlmProvider {
       full += text;
       yield { type: "text_delta", text };
     }
-    yield { type: "message_end", text: full };
+    yield {
+      type: "message_end",
+      text: full,
+      stopReason: "end_turn",
+      assistantContent: [{ type: "text", text: full }],
+    };
   }
 }
 
@@ -73,7 +79,7 @@ describe("LlmAgent", () => {
       store.append("user_message", { text: `メッセージ${i}` });
     }
     const provider = new FakeProvider(["ok"]);
-    await collect(new LlmAgent(provider, store, 3));
+    await collect(new LlmAgent(provider, store, new SkillRegistry([]), 3));
 
     expect(provider.calls[0]?.messages).toHaveLength(3);
     expect(provider.calls[0]?.messages.at(-1)?.content).toBe("メッセージ10");

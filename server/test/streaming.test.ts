@@ -14,7 +14,13 @@ const streamingStub: Agent = {
 };
 
 const running = startServer(
-  { port: 0, authToken: TOKEN, dbPath: ":memory:", anthropicModel: "unused" },
+  {
+    port: 0,
+    authToken: TOKEN,
+    dbPath: ":memory:",
+    anthropicModel: "unused",
+    googleCalendarId: "primary",
+  },
   { agent: streamingStub },
 );
 const base = `http://localhost:${running.port}`;
@@ -49,7 +55,7 @@ describe("M2: assistant_delta のストリーミング配送", () => {
     expect(frames[1]?.id).toBeUndefined();
     expect(frames[2]?.id).toBeUndefined();
     // delta を連結すると確定文になる
-    expect((frames[3]?.payload as { text: string }).text).toBe("こんにちは");
+    expect((frames[3] as { payload: { text: string } }).payload.text).toBe("こんにちは");
 
     // 受信箱には user_message と assistant_message の2件だけ
     const res = await fetch(`${base}/events?after=0`, {

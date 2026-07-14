@@ -5,6 +5,9 @@ import { type Agent, EchoAgent, LlmAgent } from "./core/agent";
 import { Dispatcher } from "./core/dispatcher";
 import { createApp } from "./http/app";
 import { AnthropicProvider } from "./llm/anthropic";
+import { CalendarSkill } from "./skills/calendar";
+import { GoogleCalendarClient } from "./skills/calendar/google-client";
+import { type Skill, SkillRegistry } from "./skills/skill";
 import { createDb } from "./store/db";
 import { EventStore } from "./store/events";
 
@@ -55,9 +58,32 @@ function createDefaultAgent(config: Config, store: EventStore): Agent {
     console.warn("[okabe] ANTHROPIC_API_KEY 未設定のためエコー応答で起動します");
     return new EchoAgent();
   }
-  console.log(`[okabe] LLM: ${config.anthropicModel}`);
+  const skills = new SkillRegistry(createSkills(config));
+  console.log(
+    `[okabe] LLM: ${config.anthropicModel} / skills: ${skills.isEmpty ? "なし" : skills.tools.map((t) => t.name).join(", ")}`,
+  );
   return new LlmAgent(
     new AnthropicProvider({ apiKey: config.anthropicApiKey, model: config.anthropicModel }),
     store,
+    skills,
   );
+}
+
+function createSkills(config: Config): Skill[] {
+  const skills: Skill[] = [];
+  if (config.googleClientId && config.googleClientSecret && config.googleRefreshToken) {
+    skills.push(
+      new CalendarSkill(
+        new GoogleCalendarClient({
+          clientId: config.googleClientId,
+          clientSecret: config.googleClientSecret,
+          refreshToken: config.googleRefreshToken,
+          calendarId: config.googleCalendarId,
+        }),
+      ),
+    );
+  } else {
+    console.warn("[okabe] GOOGLE_* 未設定のため calendar スキルは無効です（手順は README）");
+  }
+  return skills;
 }

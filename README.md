@@ -107,6 +107,42 @@ fvm flutter run -d macos \
 応答の断片（`assistant_delta`）は永続化されない一時フレームで、確定文だけが受信箱に載る —
 切断中に取りこぼしても catch-up で完全な形が届く、という M1 の原則をそのまま保っている。
 
+### M3: Google カレンダー連携のセットアップ（手動手順）
+
+calendar スキルを有効にするには、一度だけ以下の手順で refresh token を取得する。
+
+**1. GCP コンソール側の準備**（[console.cloud.google.com](https://console.cloud.google.com/)）
+
+1. プロジェクトを作成（既存でも可）
+2. 「APIとサービス → ライブラリ」で **Google Calendar API** を有効化
+3. 「APIとサービス → OAuth同意画面」を構成
+   - User Type: **外部** / 公開ステータスは「テスト」のままでよい
+   - **テストユーザーに自分の Google アカウントを追加**（これを忘れると認可時に 403）
+4. 「APIとサービス → 認証情報 → 認証情報を作成 → OAuth クライアント ID」
+   - アプリケーションの種類: **デスクトップアプリ**
+   - 発行された「クライアント ID」と「クライアント シークレット」を控える
+
+**2. 初回認可（ローカルで一度だけ）**
+
+```bash
+cd server
+# .env に GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET を記入してから:
+bun scripts/google-auth.ts
+# → 表示された URL をブラウザで開いて認可（スコープは calendar.readonly のみ）
+# → ターミナルに表示された GOOGLE_REFRESH_TOKEN=... を .env に追記
+```
+
+**3. サーバーを再起動**すると起動ログに `skills: list_events, find_free_slots` が出る。
+「明日の予定は？」「来週空いてる日は？」に答えられるようになる。
+
+補足:
+- スコープは読み取り専用（`calendar.readonly`）。予定の作成・変更はできない
+- refresh token は「テスト」ステータスのアプリでは**7日で失効**する場合がある（Google の仕様）。
+  失効したら手順2を再実行。長く使うなら OAuth 同意画面を「本番」に公開する（審査は
+  readonly スコープなら不要）
+- 空き時間の計算は 8:00〜20:00（Asia/Tokyo）の範囲・コード側の決定的ロジックで行う。
+  LLM は日付の解釈と結果の言語化のみを担当し、予定をでっち上げられない構造にしている
+
 ### 本番配置（VPS）
 
 systemd + リバースプロキシ（Caddy 等で HTTPS 終端）を想定。手順は M4 までに `docs/` に追記予定。
@@ -130,8 +166,9 @@ cd app && fvm flutter analyze && fvm flutter test
 | M0 | 設計（スタック選定・プロトコル・ADR） | ✅ |
 | M1 | メッセージ往復の成立（WS + 認証 + 受信箱 + catch-up + エコー） | ✅ |
 | M2 | LLM会話（Anthropic、会話履歴つきストリーミング応答） | ✅ |
-| M3 | カレンダースキル（Google OAuth2 / freebusy） | 🔜 |
-| M4 | 能動通知（定期ジョブ → 毎朝の予定サマリー） | — |
+| M2.5 | プロンプトキャッシング + トークン消費の計測（`bun run usage`） | ✅ |
+| M3 | カレンダースキル（Google OAuth2 / freebusy） | ✅ |
+| M4 | 能動通知（定期ジョブ → 毎朝の予定サマリー） | 🔜 |
 | 以降 | FCMプッシュ / 案件監視スキル / 階層LLMルーティング | — |
 
 ## リポジトリ構成
@@ -140,13 +177,14 @@ cd app && fvm flutter analyze && fvm flutter test
 okabe/
 ├── server/            # Bun + Hono + Drizzle（エージェント本体）
 │   ├── src/
-│   │   ├── core/      # エージェントループ、通知ディスパッチ
-│   │   ├── llm/       # LlmProvider + anthropic 実装（M2）
-│   │   ├── skills/    # Skill インターフェース + calendar/（M3）
+│   │   ├── core/      # エージェントループ（tool use ルーティング）、通知ディスパッチ
+│   │   ├── llm/       # LlmProvider + anthropic 実装（キャッシング含む）
+│   │   ├── skills/    # Skill インターフェース + calendar/
 │   │   ├── channels/  # Channel インターフェース + websocket/
 │   │   ├── jobs/      # スケジューラ（M4）
 │   │   ├── store/     # Drizzle スキーマ + リポジトリ
 │   │   └── http/      # Hono ルーティング、認証
+│   ├── scripts/       # google-auth（OAuth初回認可）、usage-report
 │   └── drizzle/       # マイグレーション
 ├── app/               # Flutter クライアント
 ├── docs/              # 設計ドキュメント + ADR
