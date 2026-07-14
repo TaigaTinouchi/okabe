@@ -1,5 +1,7 @@
 # okabe
 
+[![ci](https://github.com/TaigaTinouchi/okabe/actions/workflows/ci.yml/badge.svg)](https://github.com/TaigaTinouchi/okabe/actions/workflows/ci.yml)
+
 サーバーに常駐する個人用AIエージェント。自作クライアントから話しかけると応答し、
 エージェント側からも定期ジョブを起点に**能動的に通知してくる**。
 
