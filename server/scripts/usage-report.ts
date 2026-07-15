@@ -6,8 +6,24 @@
  *   journalctl -u okabe --since "7 days ago" -o cat | bun scripts/usage-report.ts
  */
 
-// claude-opus-4-8 の単価（USD / 1M tokens）
-const PRICE = { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 };
+// モデル別単価（USD / 1M tokens）。cacheRead = input×0.1、cacheWrite = input×1.25
+const PRICES: Record<string, { input: number; output: number }> = {
+  "claude-opus-4-8": { input: 5, output: 25 },
+  "claude-sonnet-4-6": { input: 3, output: 15 },
+  "claude-haiku-4-5": { input: 1, output: 5 },
+};
+const DEFAULT_PRICE = { input: 5, output: 25 }; // 未知モデルは高い方に倒して概算
+
+function costOf(u: UsageLine): number {
+  const p = PRICES[u.model] ?? DEFAULT_PRICE;
+  return (
+    (u.input_tokens * p.input +
+      u.output_tokens * p.output +
+      u.cache_read_input_tokens * p.input * 0.1 +
+      u.cache_creation_input_tokens * p.input * 1.25) /
+    1_000_000
+  );
+}
 
 interface UsageLine {
   t: string;
@@ -25,6 +41,7 @@ interface DayAgg {
   output: number;
   cacheRead: number;
   cacheWrite: number;
+  cost: number;
 }
 
 function parseLine(line: string): UsageLine | null {
@@ -46,12 +63,20 @@ for (const line of text.split("\n")) {
   const u = parseLine(line);
   if (!u) continue;
   const day = u.ts.slice(0, 10);
-  const agg = days.get(day) ?? { requests: 0, input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+  const agg = days.get(day) ?? {
+    requests: 0,
+    input: 0,
+    output: 0,
+    cacheRead: 0,
+    cacheWrite: 0,
+    cost: 0,
+  };
   agg.requests++;
   agg.input += u.input_tokens;
   agg.output += u.output_tokens;
   agg.cacheRead += u.cache_read_input_tokens;
   agg.cacheWrite += u.cache_creation_input_tokens;
+  agg.cost += costOf(u); // 単価はモデル別（リクエスト行ごとに算出）
   days.set(day, agg);
 }
 
@@ -66,12 +91,7 @@ console.log(
 for (const [day, a] of [...days.entries()].sort()) {
   const promptTotal = a.input + a.cacheRead + a.cacheWrite;
   const hitRate = promptTotal === 0 ? 0 : (a.cacheRead / promptTotal) * 100;
-  const cost =
-    (a.input * PRICE.input +
-      a.output * PRICE.output +
-      a.cacheRead * PRICE.cacheRead +
-      a.cacheWrite * PRICE.cacheWrite) /
-    1_000_000;
+  const cost = a.cost;
   console.log(
     [
       day,

@@ -32,7 +32,9 @@ afterAll(() => running.stop());
 
 describe("M2: assistant_delta のストリーミング配送", () => {
   test("delta は一時フレームで届き、確定文だけが受信箱に永続化される", async () => {
-    const ws = new WebSocket(`ws://localhost:${running.port}/ws?token=${TOKEN}`);
+    const ws = new WebSocket(`ws://localhost:${running.port}/ws`, {
+      headers: { authorization: `Bearer ${TOKEN}` },
+    });
     const frames: Record<string, unknown>[] = [];
     const done = new Promise<void>((resolve) => {
       ws.onmessage = (e) => {

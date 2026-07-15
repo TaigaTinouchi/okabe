@@ -17,7 +17,7 @@ export interface AnthropicProviderOptions {
   maxTokens?: number;
 }
 
-const DEFAULT_MODEL = "claude-opus-4-8";
+const DEFAULT_MODEL = "claude-sonnet-4-6";
 const DEFAULT_LIGHT_MODEL = "claude-haiku-4-5";
 const DEFAULT_MAX_TOKENS = 8_192;
 
@@ -70,7 +70,7 @@ function mapStopReason(reason: string | null): StopReason {
  *   1. system 末尾 — レンダリング順は tools → system → messages なので、
  *      ここ1つで「ツール定義 + システムプロンプト」の静的prefixがまとめて対象になる
  *   2. 最終メッセージ末尾 — ターンが進むたびに前ターンまでの履歴がキャッシュ読みになる
- * 注意: claude-opus-4-8 の最小キャッシュ単位は 4096 トークン。
+ * 注意: 最小キャッシュ単位はモデル依存（sonnet-4-6: 2048 / opus-4-8: 4096 トークン）。
  * それ未満の prefix では無害に不発する（cache_creation_input_tokens = 0）
  */
 export function buildRequestParams(args: {

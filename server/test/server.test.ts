@@ -18,10 +18,10 @@ const base = `http://localhost:${running.port}`;
 afterAll(() => running.stop());
 
 function connect(token?: string): Promise<WebSocket> {
-  const url = token
-    ? `ws://localhost:${running.port}/ws?token=${token}`
-    : `ws://localhost:${running.port}/ws`;
-  const ws = new WebSocket(url);
+  // トークンは Authorization ヘッダーで渡す（クエリパラメータは廃止済み）
+  const ws = new WebSocket(`ws://localhost:${running.port}/ws`, {
+    headers: token ? { authorization: `Bearer ${token}` } : {},
+  });
   return new Promise((resolve, reject) => {
     ws.onopen = () => resolve(ws);
     ws.onerror = () => reject(new Error("connection failed"));

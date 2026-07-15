@@ -93,7 +93,9 @@ bun run dev
 ```
 
 `http://localhost:8787/health` が `{"ok":true}` を返せば起動している。
-モデルは `ANTHROPIC_MODEL` で変更可能（省略時 `claude-opus-4-8`）。
+モデルは `ANTHROPIC_MODEL` で変更可能。省略時は `claude-sonnet-4-6` —
+日常会話+カレンダー用途では Opus とのコスト差（$5/$25 vs $3/$15 /1Mトークン）が
+体感差に見合わないため、Opus は明示オプトインの位置づけ。
 
 ### クライアント
 
@@ -160,7 +162,9 @@ bun scripts/google-auth.ts
 
 ### 本番配置（VPS）
 
-systemd + リバースプロキシ（Caddy 等で HTTPS 終端）を想定。手順は M4 までに `docs/` に追記予定。
+systemd + Caddy（HTTPS/WSS終端）で常駐させる。初回セットアップから更新デプロイまでの
+手順は [docs/deploy.md](docs/deploy.md) を参照。配備先・方式の判断は
+[ADR-0008](docs/adr/0008-deploy-target.md)。
 
 ## 開発
 

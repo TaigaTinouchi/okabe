@@ -6,7 +6,11 @@ const configSchema = z.object({
   dbPath: z.string().default("data/okabe.db"),
   /** 未設定なら LLM を使わずエコー応答（M1 相当）で起動する */
   anthropicApiKey: z.string().optional(),
-  anthropicModel: z.string().default("claude-opus-4-8"),
+  /**
+   * 既定は Sonnet。日常会話+カレンダー用途では Opus とのコスト差（$5/$25 vs $3/$15 /1M tok）が
+   * 体感差に見合わないため。Opus を使う場合は ANTHROPIC_MODEL で明示オプトイン
+   */
+  anthropicModel: z.string().default("claude-sonnet-4-6"),
   /** 軽タスク用モデル（tier: light、サマリー整形など） */
   anthropicModelLight: z.string().default("claude-haiku-4-5"),
   /** 無効化するジョブ名（カンマ区切り） */
