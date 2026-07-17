@@ -4,6 +4,7 @@ import type { Config } from "./config";
 import { type Agent, EchoAgent, LlmAgent } from "./core/agent";
 import { Dispatcher } from "./core/dispatcher";
 import { createApp } from "./http/app";
+import { createDbBackupJob } from "./jobs/db-backup";
 import { type JobContext, JobScheduler } from "./jobs/scheduler";
 import { AnthropicProvider } from "./llm/anthropic";
 import type { LlmProvider } from "./llm/provider";
@@ -57,6 +58,10 @@ export function startServer(config: Config, overrides: { agent?: Agent } = {}): 
   for (const skill of skills) {
     for (const job of skill.jobs ?? []) scheduler.register(job);
   }
+  // コアジョブ: SQLite の日次スナップショット（ADR-0008）
+  if (config.dbPath !== ":memory:") {
+    scheduler.register(createDbBackupJob(db, config.dbPath));
+  }
 
   const { upgradeWebSocket, websocket } = createBunWebSocket();
   const app = createApp({
@@ -71,6 +76,7 @@ export function startServer(config: Config, overrides: { agent?: Agent } = {}): 
 
   const server = Bun.serve({
     port: config.port,
+    hostname: config.bindHost, // 既定 127.0.0.1（外部公開は Caddy 経由のみ）
     fetch: app.fetch,
     websocket,
   });

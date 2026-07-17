@@ -1,8 +1,9 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import type { Agent, AgentEvent } from "../src/core/agent";
 import { startServer } from "../src/server";
+import { TEST_TOKEN, testConfig } from "./helpers";
 
-const TOKEN = "test-token-0123456789abcdef";
+const TOKEN = TEST_TOKEN;
 
 /** delta → delta → 確定、の順で応答するスタブ（M2 のストリーミング配送を検証） */
 const streamingStub: Agent = {
@@ -13,19 +14,7 @@ const streamingStub: Agent = {
   },
 };
 
-const running = startServer(
-  {
-    port: 0,
-    authToken: TOKEN,
-    dbPath: ":memory:",
-    anthropicModel: "unused",
-    anthropicModelLight: "unused",
-    disabledJobs: "",
-    morningSummaryCron: "30 7 * * *",
-    googleCalendarId: "primary",
-  },
-  { agent: streamingStub },
-);
+const running = startServer(testConfig(), { agent: streamingStub });
 const base = `http://localhost:${running.port}`;
 
 afterAll(() => running.stop());

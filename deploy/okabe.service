@@ -1,0 +1,24 @@
+# /etc/systemd/system/okabe.service
+# 配置手順は docs/deploy.md を参照
+[Unit]
+Description=okabe personal AI agent
+After=network-online.target
+Wants=network-online.target
+# 起動失敗の連続で諦めない（RestartSec がバックオフを担う）
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=okabe
+WorkingDirectory=/home/okabe/okabe/server
+ExecStart=/home/okabe/.bun/bin/bun src/index.ts
+# シークレットは EnvironmentFile で注入（ファイル権限 600 にすること）
+EnvironmentFile=/home/okabe/okabe/server/.env
+Restart=always
+RestartSec=5
+# ログは journald へ（journalctl -u okabe で追える）
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

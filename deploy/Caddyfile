@@ -1,0 +1,6 @@
+# /etc/caddy/Caddyfile
+# {あなたのドメイン} を実際のドメインに置き換える（例: okabe.example.com）
+# Caddy が Let's Encrypt の証明書取得・更新と WSS（WebSocket の Upgrade）を自動で扱う
+{あなたのドメイン} {
+	reverse_proxy 127.0.0.1:8787
+}

@@ -9,7 +9,7 @@
 AGENT_URL ?= http://localhost:8787
 APP_BUNDLE = app/build/macos/Build/Products/Release/okabe_app.app
 
-.PHONY: dev test check app run-app install-app usage
+.PHONY: dev test check app run-app install-app usage deploy
 
 ## サーバーを開発モードで起動（--watch付き）
 dev:
@@ -50,3 +50,8 @@ run-app:
 ## LLMトークン消費の日別レポート（例: make usage < server.log）
 usage:
 	cd server && bun run usage
+
+## 本番VPSへの更新デプロイ（例: make deploy OKABE_SSH=okabe@example.com）
+deploy:
+	@test -n "$(OKABE_SSH)" || { echo "OKABE_SSH=user@host を指定してください"; exit 1; }
+	ssh $(OKABE_SSH) '~/okabe/deploy/deploy.sh'

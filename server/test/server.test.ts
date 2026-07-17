@@ -1,18 +1,10 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { startServer } from "../src/server";
+import { TEST_TOKEN, testConfig } from "./helpers";
 
-const TOKEN = "test-token-0123456789abcdef";
+const TOKEN = TEST_TOKEN;
 
-const running = startServer({
-  port: 0,
-  authToken: TOKEN,
-  dbPath: ":memory:",
-  anthropicModel: "unused",
-  anthropicModelLight: "unused",
-  disabledJobs: "",
-  morningSummaryCron: "30 7 * * *",
-  googleCalendarId: "primary",
-});
+const running = startServer(testConfig());
 const base = `http://localhost:${running.port}`;
 
 afterAll(() => running.stop());

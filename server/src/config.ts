@@ -2,6 +2,12 @@ import { z } from "zod";
 
 const configSchema = z.object({
   port: z.coerce.number().int().positive().default(8787),
+  /**
+   * バインド先。既定は 127.0.0.1（外部非公開）。
+   * 本番は Caddy が443で受けて localhost へプロキシするため、この既定のままでよい。
+   * LAN内の他端末から直接叩きたい開発時のみ 0.0.0.0 にする
+   */
+  bindHost: z.string().default("127.0.0.1"),
   authToken: z.string().min(16, "AUTH_TOKEN must be at least 16 characters"),
   dbPath: z.string().default("data/okabe.db"),
   /** 未設定なら LLM を使わずエコー応答（M1 相当）で起動する */
@@ -29,6 +35,7 @@ export type Config = z.infer<typeof configSchema>;
 export function loadConfig(env: Record<string, string | undefined> = Bun.env): Config {
   return configSchema.parse({
     port: env.PORT,
+    bindHost: env.BIND_HOST,
     authToken: env.AUTH_TOKEN,
     dbPath: env.DB_PATH,
     anthropicApiKey: env.ANTHROPIC_API_KEY,
